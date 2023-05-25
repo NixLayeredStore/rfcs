@@ -37,7 +37,7 @@ Each has serious drawbacks:
 
 - Share everything incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
 
-- Overlay everything breaks as soon as the lower layer is changed, even if we are just adding more store objects to the lower store (which the upper layer ought to ignore).
+- Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's.
 
 The new `local-overlay` store also uses OverlayFS, but just for the store directory.
 The database is still a regular fresh empty one to start, and instead Nix explicitly knows about the lower store, so it can get any information for the DB it needs from it manually.
@@ -51,10 +51,7 @@ This avoids all 3 downsides:
   The lower store is never written to (no modifications or even filesystem locks) so any slow NFS write and sync paths should not be encountered.
 
 - No rigidity of the lower store.
-  Since we are not overlaying raw SQLite DBs, it is fine if data is shuffled around in the lower store.
-  (Indeed, when the lower store is a daemon, we don't directly see its DB at all!)
-  We just need *logical append-only-ness*, not *physical immutablility*:
-  As long as nothing referenced by the `local-overlay` store is deleted in the lower store, everything should be fine.
+  Since Nix sees both the `overlay-store`'s DB and the lower store, it is possible for it to be aware of and utilize objects that were added to the lower store after the upper store was created.
 
 This gives us a "best of all three worlds" solution.
 
