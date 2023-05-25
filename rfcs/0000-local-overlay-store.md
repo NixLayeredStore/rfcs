@@ -1,5 +1,5 @@
 ---
-feature: (fill me in with a unique ident, my_awesome_feature)
+feature: local-overlay-store
 start-date: (fill me in with today's date, YYYY-MM-DD)
 author: (name of the main author)
 co-authors: (find a buddy later to help out with the RFC)
@@ -11,24 +11,111 @@ related-issues: (will contain links to implementation PRs)
 # Summary
 [summary]: #summary
 
-One paragraph explanation of the feature.
+Add a new `local-overlay` store implementation to Nix.
+This will be a local store that is layered upon another local filesystem store (local store or daemon).
+This allows locally extending a shared store that is periodically extended with additional store objects.
 
 # Motivation
 [motivation]: #motivation
 
-Why are we doing this? What use cases does it support? What is the expected
-outcome?
+TODO: link Replit blog post.
+
+## Technical motivation
+
+Many organizational users of Nix have a large collection of Nix store objects they wish to share with a number of consumers, be they human users, build farm workers etc.
+The existing ways of doing this are:
+
+- Share nothing: Copy store objects to each consumer
+
+- Share everything: Use single mutable NFS store, carefully synchronizing updates.
+
+- Overlay everything: Mount all of `/nix` (store and DB) with OverlayFS.
+
+Each has serious drawbacks:
+
+- Share nothing wastes tones of space as many duplicate store objects are stored separately.
+
+- Share everything incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
+
+- Overlay everything breaks as soon as the lower layer is changed, even if we are just adding more store objects to the lower store (which the upper layer ought to ignore).
+
+The new `local-overlay` store also uses OverlayFS, but just for the store directory.
+The database is still a regular fresh empty one to start, and instead Nix explicitly knows about the lower store, so it can get any information for the DB it needs from it manually.
+This avoids all 3 downsides:
+
+- Store objects are never deduplicated.
+  OverlayFS ensures that one copy in either store dir layer is enough, and we are careful never to wastefully include a store object in both layers.
+
+- No excess synchronization.
+  local changes are just that: local, not shared with any other consumer.
+  The lower store is never written to (no modifications or even filesystem locks) so any slow NFS write and sync paths should not be encountered.
+
+- No rigidity of the lower store.
+  Since we are not overlaying raw SQLite DBs, it is fine if data is shuffled around in the lower store.
+  (Indeed, when the lower store is a daemon, we don't directly see its DB at all!)
+  We just need *logical append-only-ness*, not *physical immutablility*:
+  As long as nothing referenced by the `local-overlay` store is deleted in the lower store, everything should be fine.
+
+This gives us a "best of all three worlds" solution.
+
+## Marketing motivation
+
+It is quite common for organizations using Nix to first adopt it behind the scenes.
+That is to say, Nix is used to prepare some artifacts which are then presented to a consumer that need not be aware they were made with Nix.
+Later though, because of Nix's gaining popularity, there may be a desire to reveal its usage so consumers can use Nix themselves.
+Rather than Nix being a controversial tool worth hiding, it can be a popular tool worth exposing.
+Nix-unware usage can still work, but Nix-aware usage can do additional things.
+
+The `local-overlay` store can serve as a crucial tool to bridge these two modes of using Nix.
+The lower store can be however the artifacts were disseminated in the "hidden Nix" first phase of adoption, perhaps with a small tweak to expose the DB / daemon socket if it wasn't before.
+The upper store is new, but purely local, separate for each user that wants to use Nix, and completely not impacting any user that doesn't.
+
+By providing the `local-overlay` store, we are essentially completing a reusable step-by-step guide for Nix users to "Nixify their workplace" in a very conscientious and non-disruptive manner.
 
 # Detailed design
 [design]: #detailed-design
 
-This is the core, normative part of the RFC. Explain the design in enough
-detail for somebody familiar with the ecosystem to understand, and implement.
-This should get into specifics and corner-cases. Yet, this section should also
-be terse, avoiding redundancy even at the cost of clarity.
+## Class hierarchy, configuration settings, and initialization
+
+`LocalOverlayStore` is a subclass of `LocalStore` implementing the `local-overlay` store.
+It has additional configuration items for:
+
+ - the lower store, which must be a `LocalFSStore`
+
+ - the scratch directory used as the upper layer of the OverlayFS
+
+On initialization, it checks that an OverlayFS mount exists matching these parameters:
+
+ - the lower layer must be the lower layer's "real store directory"
+
+ - the upper layer must be the scratch directory specified for this purpose
+
+The database for the `local-overlay` store is exactly like that for a regular local store:
+
+ - same schema, including foreign key constraints
+
+ - created empty on opening the store if it doesn't exist
+
+ - opened existing one otherwise
+
+## Operation
+
+As discussed in the motivation, all store objects are stored exactly once: either in the lower store or the upper scratch directory.
+No file system data should ever be duplicated.
+
+Non-filesystem data, what goes in the DB (references, signatures, etc.) is duplicated.
+Any store object from the lower store that the upper store needs has that information copied into the upper store's DB.
+This includes information for the closure of any such store object, because the normal closure property enforced by the DB's foreign key constraints is upheld.
+
+## Read-only `local` Store
+
+In order to facilitate using `local-overlay` where the lower store is entirely read only (read only SQLite files too, not just store directory), it is useful to also implement a new "read-only" setting on the `local` store.
 
 # Examples and Interactions
 [examples-and-interactions]: #examples-and-interactions
+
+Because the `local-overlay` store is a completely separate store implementation, the interactions with the rest of Nix are fairly minimal and well-defined.
+In particular, users of other stores and not the `local-overlay` store
 
 This section illustrates the detailed design. This section should clarify all
 confusion the reader has from the previous sections. It is especially important
