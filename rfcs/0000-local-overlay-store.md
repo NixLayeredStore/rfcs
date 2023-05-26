@@ -80,26 +80,62 @@ By providing the `local-overlay` store, we are essentially completing a reusable
 
 ## Class hierarchy, configuration settings, and initialization
 
+**TODO put in layering diagram, e.g. from blog**
+
 `LocalOverlayStore` is a subclass of `LocalStore` implementing the `local-overlay` store.
 It has additional configuration items for:
 
- - the lower store, which must be a `LocalFSStore`
+ - The lower store, which must be a `LocalFSStore`
 
- - the scratch directory used as the upper layer of the OverlayFS
+   This is specified with an escaped URL just like the `remote-store` setting of the two SSH stores types.
+
+ - The scratch directory used as the upper layer of the OverlayFS
 
 On initialization, it checks that an OverlayFS mount exists matching these parameters:
 
- - the lower layer must be the lower layer's "real store directory"
+ - The lower layer must be the lower layer's "real store directory"
 
- - the upper layer must be the scratch directory specified for this purpose
+ - The upper layer must be the scratch directory specified for this purpose
 
 The database for the `local-overlay` store is exactly like that for a regular local store:
 
- - same schema, including foreign key constraints
+ - Same schema, including foreign key constraints
 
- - created empty on opening the store if it doesn't exist
+ - Created empty on opening the store if it doesn't exist
 
- - opened existing one otherwise
+ - Opened existing one otherwise
+
+## Data structure
+
+This is a diagram for the possible states of a single store object.
+Except for the closure property mandating that present store objects must have all their references also be present, store objects are independent.
+We can therefore to a large extent get away with considering only a single store object.
+
+**TODO put [state machine and partial order diagram](./0000-local-overlay-store/store-object-state-machine.drawio)**
+
+Key:
+
+ - Colors:
+
+   - Red (warm colors): Store object considered not in store
+
+   - Green/Blue (cool colors): Store object considered in store
+
+     - Green: Store object resident of lower store
+
+     - Blue: Store object resident of upper layer / `local-overlay` store only
+
+     - Both, both stores
+
+ - Arrows:
+
+   - Up arrows (any style) "more present" partial order
+
+   - Solid arrows: regular transitions (come from regular store operations)
+
+   - Wide dashed arrow: part of partial order but should not happen
+
+   - Thin dashed arrow: special operation specific to `local-overlay` store
 
 ## Operation
 
@@ -143,8 +179,10 @@ New snapshots can only be gotten when consumers log in again, and old snapshots 
 
 A slight drawback with the architecture is a lack of a normal form.
 A store object in the lower store may or may not have a DB entry in the `overlay-local` store.
-This introduces some flexibility in the system: the seem "logical" layered store can be represented in multiple different "physical" configurations.
 
+> In the store object state diagriam diagram, this is represented by the fact that there are two green nodes, instead of just one like the one blue node.
+
+This introduces some flexibility in the system: the seem "logical" layered store can be represented in multiple different "physical" configurations.
 This isn't a problem per-se, but does mean there is a bit more complexity to consider during testing and system administration.
 
 ## Deleting isn't intuitive
