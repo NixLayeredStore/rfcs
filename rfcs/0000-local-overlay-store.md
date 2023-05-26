@@ -89,13 +89,13 @@ It has additional configuration items for:
 
    This is specified with an escaped URL just like the `remote-store` setting of the two SSH stores types.
 
- - The scratch directory used as the upper layer of the OverlayFS
+ - The directory used as the upper layer of the OverlayFS
 
 On initialization, it checks that an OverlayFS mount exists matching these parameters:
 
  - The lower layer must be the lower layer's "real store directory"
 
- - The upper layer must be the scratch directory specified for this purpose
+ - The upper layer must be the directory specified for this purpose
 
 The database for the `local-overlay` store is exactly like that for a regular local store:
 
@@ -139,12 +139,18 @@ Key:
 
 ## Operation
 
-As discussed in the motivation, all store objects are stored exactly once: either in the lower store or the upper scratch directory.
-No file system data should ever be duplicated.
+As discussed in the motivation, store objects are never knowingly duplicated.
+The `local-overlay` store while in operation ensures that store objects are stored exactly once:
+either in the lower store or the upper layer directory.
+No file system data should ever be duplicated by `local-overlay itself.
 
 Non-filesystem data, what goes in the DB (references, signatures, etc.) is duplicated.
 Any store object from the lower store that the `local-overlay` needs has that information copied into the `local-overlay` store's DB.
 This includes information for the closure of any such store object, because the normal closure property enforced by the DB's foreign key constraints is upheld.
+
+Store objects can still end up duplicated if the lower store gains a store object the upper store already had after.
+This is because when the `local-overlay` is remounted, it doesn't know how the lower store may have changed, and when the lower store is added to, any upper store directories / DBs are not in general visible either.
+We can have a "fsck" operation however that manually scans for missing / duplicated objects.
 
 ## Read-only `local` Store
 
