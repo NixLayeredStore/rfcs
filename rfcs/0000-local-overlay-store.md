@@ -65,12 +65,18 @@ Nix-unware usage can still work, but Nix-aware usage can do additional things.
 
 The `local-overlay` store can serve as a crucial tool to bridge these two modes of using Nix.
 The lower store can be however the artifacts were disseminated in the "hidden Nix" first phase of adoption, perhaps with a small tweak to expose the DB / daemon socket if it wasn't before.
-The upper store is new, but purely local, separate for each user that wants to use Nix, and completely not impacting any user that doesn't.
+The `local-overlay` store is new, but purely local, separate for each user that wants to use Nix, and completely not impacting any user that doesn't.
 
 By providing the `local-overlay` store, we are essentially completing a reusable step-by-step guide for Nix users to "Nixify their workplace" in a very conscientious and non-disruptive manner.
 
 # Detailed design
 [design]: #detailed-design
+
+## Basic principle
+
+`local-overlay` is a store representing the extension of a lower store with a collection of additional store objects.
+(We don't refer to the upper layer as an "upper store" because it is not self-contained
+--- it doesn't abide by the closure property because objects in the upper layer can refer to objects that are only in the lower layer.)
 
 ## Class hierarchy, configuration settings, and initialization
 
@@ -101,42 +107,91 @@ As discussed in the motivation, all store objects are stored exactly once: eithe
 No file system data should ever be duplicated.
 
 Non-filesystem data, what goes in the DB (references, signatures, etc.) is duplicated.
-Any store object from the lower store that the upper store needs has that information copied into the upper store's DB.
+Any store object from the lower store that the `local-overlay` needs has that information copied into the `local-overlay` store's DB.
 This includes information for the closure of any such store object, because the normal closure property enforced by the DB's foreign key constraints is upheld.
 
 ## Read-only `local` Store
 
 In order to facilitate using `local-overlay` where the lower store is entirely read only (read only SQLite files too, not just store directory), it is useful to also implement a new "read-only" setting on the `local` store.
+The main thing this does is use SQLite's [immutable mode](https://www.sqlite.org/c3ref/open.html).
+
+This is a separate feature;
+it is perfectly possible to implement the `local-overlay` without this or vice-versa.
+But for maximum usability, we want to do both.
 
 # Examples and Interactions
 [examples-and-interactions]: #examples-and-interactions
 
 Because the `local-overlay` store is a completely separate store implementation, the interactions with the rest of Nix are fairly minimal and well-defined.
-In particular, users of other stores and not the `local-overlay` store
-
-This section illustrates the detailed design. This section should clarify all
-confusion the reader has from the previous sections. It is especially important
-to counterbalance the desired terseness of the detailed design; if you feel
-your detailed design is rudely short, consider making this section longer
-instead.
+In particular, users of other stores and not the `local-overlay` store will not be impacted at all.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Why should we *not* do this?
+## Read-only local store is delicate
+
+SQLite's immutuable mode doesn't mean "we promise not to change the database".
+It relies on the database not just being *logically* immutable (the meaning doesn't change), but *physically* immutable (no bytes of the on-disk files change).
+This is because it is forgoing synchronization altogether and thus relying that nothing can be rearranged e.g. in the middle of a query (invalidating in-progress traversals of data structures, etc.).
+This means there is no hope of, say "append only" mode where "publishers" only add new store objects to a local store, while read-only mode "subscribers" are able to deal with other store objects just fine.
+
+This is an inconvenience for rolling out new versions of the lower store, but not a show stopper.
+One solution is "multi version concurrency control" where consumers get an immutable snapshot of the lower store for the duration of each login.
+New snapshots can only be gotten when consumers log in again, and old snapshots can only be retired once every consumer viewing them logs out.
+
+## `local-overlay` lacks normal form for the database
+
+A slight drawback with the architecture is a lack of a normal form.
+A store object in the lower store may or may not have a DB entry in the `overlay-local` store.
+This introduces some flexibility in the system: the seem "logical" layered store can be represented in multiple different "physical" configurations.
+
+This isn't a problem per-se, but does mean there is a bit more complexity to consider during testing and system administration.
+
+## Deleting isn't intuitive
+
+For "deleting" lower store objects in the `local-overlay` store,
+we don't actually remove them but just remove the upper DB entry.
+This is somewhat surprising, but reflects the fact that the lower store is logically immutable (even when it isn't a `local` store opened in read-only mode).
+By deleting the upper DB entry, we are not removing the object from the `local-overlay` store, but we are still resetting it to the initial state.
 
 # Alternatives
 [alternatives]: #alternatives
 
-What other designs have been considered? What is the impact of not doing this?
+## Bind mounts instead of overlayfs
+
+Instead of mounting the entire lower store dir underneath ours via OverlayFS, we could bind mount individual store objects as we need them.
+The bind-mounting store would not longer be the union of the lower store with the additional store objects, instead the lower store acts more as a special optimized substituter.
+
+This gives a normal form in that objects are bind-mounted if and only if they have a DB entry in the bind-mounting store;
+There is no "have store object, don't yet have DB entry" middle state to worry about.
+
+The downside of this is that Nix needs elevate permissions in order to create those bind mounts, and the impact of having arbitrarily many bind mounts is unknown.
+
+## FUSE
+
+We could have a single FUSE mount that could manually implement the "bind on demand" semantics described above without cluttering the mount namespace with an entry per each shared store object.
+FUSE however is quite primitive, in that every read need to be shuffled via the FUSE server.
+There is nothing like a "control plane vs data plane" separation where Nix could tell the OS "this directory is that other directory", and the OS can do the rest without involving the FUSE server.
+That means the performance of FUSE are potentially worse than these in-kernel mounting solutions.
+
+Also, this would require a good deal more code than the other solutions.
+Perhaps this is a good thing; the status quo of Nix having to keep the OS and DB in sync is not as elegant as Nix squarely being the "source of truth", providing both filesystem and non-filesystem data about each store object directly.
+But it represents as significantly greater departure from the status quo.
 
 # Unresolved questions
 [unresolved]: #unresolved-questions
 
-What parts of the design are still TBD or unknowns?
+How to delete paths in the upper store without needing to remount the OverlayFS.
+(Expect to have answer by the time the RFC is up.)
 
 # Future work
 [future]: #future-work
 
-What future work, if any, would be implied or impacted by this feature
-without being directly part of the work?
+We are considering a hybrid between the `local` store and `file://` store.
+This would *not* use NARs, but would use "NAR info" files instead of a SQLite database.
+This would side-step the currency issues of SQLite's read-only mode, and make "append only" usage of the store not require much synchronization.
+(This is because the internal structure of the filesystem, unlike the internal structure of SQLite, is not visible to clients.)
+
+It is true that this is much slower used directly --- that is why Nix switched to using SQLite in the first place --- but in combination with a `local-overlay` store this doesn't matter.
+Since non-filesystem data is copied into the `local-overlay` store's DB, it will effectively act as a cache, speeding up future entires.
+Each NAR info file only needs to be read once.
