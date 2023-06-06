@@ -13,7 +13,7 @@ related-issues: (will contain links to implementation PRs)
 
 Add a new `local-overlay` store implementation to Nix.
 This will be a local store that is layered upon another local filesystem store (local store or daemon).
-This allows locally extending a shared store that is periodically extended with additional store objects.
+This allows locally extending a shared store that is periodically updated with additional store objects.
 
 # Motivation
 [motivation]: #motivation
