@@ -41,7 +41,7 @@ The new `local-overlay` store also uses OverlayFS, but just for the store direct
 The database is still a regular fresh empty one to start, and instead Nix explicitly knows about the lower store, so it can get any information for the DB it needs from it manually.
 This avoids all 3 downsides:
 
-- Store objects are never deduplicated.
+- Store objects are never duplicated by the overlay store.
   OverlayFS ensures that one copy in either layer is enough, and we are careful never to wastefully include a store object in both layers.
 
 - No excess synchronization.
@@ -112,35 +112,118 @@ The database for the `local-overlay` store is exactly like that for a regular lo
 
 ## Data structure
 
-This is a diagram for the possible states of a single store object.
+These are diagrams for the possible states of a single store object.
 Except for the closure property mandating that present store objects must have all their references also be present, store objects are independent.
 We can therefore to a large extent get away with considering only a single store object.
 
-**TODO put [state machine and partial order diagram](./0000-local-overlay-store/store-object-state-machine.drawio)**
+### Graph Key
 
-Key:
+All the graphs below follow these conventions:
 
- - Colors:
+#### Nodes
 
-   - Red (warm colors): Store object considered not in store
+- Right angle corners: Absent store object
+- Rounded corners: Present store object
 
-   - Green/Blue (cool colors): Store object considered in store
+#### Edges
 
-     - Green: Store object resident of lower store
+- Solid edge: "adding" or "deduplicating" direction
+- Dotted edge: "deleting" direction
 
-     - Blue: Store object resident of upper layer / `local-overlay` store only
+The graph when reduced to just one type of edge is always acyclic, and thus represents a partial order.
 
-     - Both, both stores
+### Lower Store
 
- - Arrows:
+While in use as a lower store by one or more overlay stores, a store most only grow "monotonically".
+That is to say, the only way it is allowed to change is by extended it with additional store objects.
 
-   - Up arrows (any style) "more present" partial order
+```mermaid
+graph TD
+    A -->|Add in store| B
 
-   - Solid arrows: regular transitions (come from regular store operations)
+    A[Absent Store Object]
+    B("Present store Object")
+```
 
-   - Wide dashed arrow: part of partial order but should not happen
+### Overlay Store logical view
 
-   - Thin dashed arrow: special operation specific to `local-overlay` store
+The overlay store by contrast allows regular arbitrary options, almost.
+
+```mermaid
+graph TD
+    A -->|Add in store| B
+    B -->|Delete from store| A
+
+    A[Absent Store Object]
+    B("Present store Object")
+```
+
+The exception is objects that are part of the lower store.
+They cannot be logically deleted, but are always part of the overlay store.
+
+### Both stores simplified view
+
+We can take the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product_of_graphs) of these two graphs,
+and additionally tweak it to cover the exeption from above:
+
+```mermaid
+flowchart TD
+    A -->|Create in lower store| B
+    A -->|Create in overlay store| C
+
+    B -->|Create in overlay store| Both
+    C -->|Create in lower store| Both
+
+    C -.->|Delete in overlay store| A
+    Both -.->|Faux-delete in overlay store| B
+
+    A[Absent Store Object]
+    B("Lower Layer Present")
+    C("Upper Layer Present")
+    Both("Both layers present")
+```
+
+In particular, "Faux-delete" refers to the exception.
+While the upper layer can "forget" about the store object, since the lower layer still contains it, the overlay store does also.
+In particular, any of the 3 "present" nodes mean the store object is logically present.
+
+### Both Store accurate physical view
+
+The above graph doesn't cover duplication vs deduplication in the "both" state.
+It also doesn't distinguish between stores directories and metadata.
+Let's now make a more complex graph which covers both of these things:
+
+```mermaid
+flowchart TD
+    A -->|Create in lower store| B
+    A -->|Create in overlay store| C
+
+    B -->|Create in upper store after created in lower store| D1
+    C -->|Create in lower store after created in lower store| D0
+
+
+    D0 -->|Manual deduplication| D1
+
+    subgraph Both
+        %%"Both layers metadata"
+        D0
+        D1
+    end
+
+    C -.->|Delete in overlay store| A
+    Both -.->|Faux-delete in overlay store| B
+
+    A[Absent Store Object]
+    B("Lower layer filesystem data<br>Lower store metadata")
+    C("Upper layer filesystem data<br>Overlay DB present")
+    D0("Both layers filesystem data<br>Lower store metadata<br>Overlay DB Metadata")
+    D1("Lower layer filesystem data<br>Lower store metadata<br>Overlay DB metadata")
+```
+
+Whenever we the filesystem part of a store object reside in a layer, the metadata must also reside in that layer.
+I.e. an lower layer of store dir store object must have lower store metadata (exact mechanism is abstract and unspecified, could be SQlite DB or daemon), and an upper layer of store object must have an overlay DB entry.
+However, when we just have the store object in the lower layer, we may also have metadata in the upper layer.
+That means there are two cases when the metadata is in both layers: the duplicated case (both layers filesystem) and deduplicated case (just lower layer filesystem).
 
 ## Operation
 
