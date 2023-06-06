@@ -85,20 +85,47 @@ This covers many of the same points above, but for the perspective of Replit use
 
 ## Class hierarchy, configuration settings, and initialization
 
-**TODO put in layering diagram, e.g. from blog**
+```mermaid
+flowchart TD
+    subgraph LocalFSStore-instance
+        LS
+        LM
+    end
+
+    LS(store directory)
+    LM(Abstract metadata source)
+
+    subgraph LocalOverlayStore-instance
+        US
+        UM
+    end
+
+    US(store directory)
+    UM(SQLite DB)
+
+    UD(Directory for additional store objects)
+
+    LocalOverlayStore-instance -->|`lower-store` configuation option| LocalFSStore-instance
+    LocalOverlayStore-instance -->|`upper-layer` configuation option| UD
+
+    US -->|OverlayFS lower layer| LS
+    US -->|OverlayFS upper layer| UD
+```
 
 `LocalOverlayStore` is a subclass of `LocalStore` implementing the `local-overlay` store.
 It has additional configuration items for:
 
- - The lower store, which must be a `LocalFSStore`
+ - `lower-store`: The lower store, which must be a `LocalFSStore`
 
    This is specified with an escaped URL just like the `remote-store` setting of the two SSH stores types.
 
- - The directory used as the upper layer of the OverlayFS
+ - `upper-layer`: The directory used as the upper layer of the OverlayFS
 
-On initialization, it checks that an OverlayFS mount exists matching these parameters:
+ - `check-mount`: Whether to check the filesystem mount configuration
 
- - The lower layer must be the lower layer's "real store directory"
+With `check-mount` enabled, on initialization it checks that an OverlayFS mount exists matching these parameters:
+
+ - The lower layer must be the lower store's "real store directory"
 
  - The upper layer must be the directory specified for this purpose
 
