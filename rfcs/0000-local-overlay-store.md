@@ -35,7 +35,7 @@ Each has serious drawbacks:
 
 - "Share everything" incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
 
-- Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's.
+- Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's and could potentially lead to reading an incorrect SQLite Write-Ahead-Logging (WAL) file.
 
 The new `local-overlay` store also uses OverlayFS, but just for the store directory.
 The database is still a regular fresh empty one to start, and instead Nix explicitly knows about the lower store, so it can get any information for the DB it needs from it manually.
@@ -122,7 +122,10 @@ It has additional configuration items for:
  - `upper-layer`: The directory used as the upper layer of the OverlayFS
 
  - `check-mount`: Whether to check the filesystem mount configuration
-
+Here is an example of how the nix.conf configuration might look:
+\```
+store = local-overlay?lower-store=/mnt/lower/%3Fread-only%3Dtrue&upper-layer=/mnt/scratch/nix/upper/store
+\```
 With `check-mount` enabled, on initialization it checks that an OverlayFS mount exists matching these parameters:
 
  - The lower layer must be the lower store's "real store directory"
@@ -263,7 +266,7 @@ Non-filesystem data, what goes in the DB (references, signatures, etc.) is dupli
 Any store object from the lower store that the `local-overlay` needs has that information copied into the `local-overlay` store's DB.
 This includes information for the closure of any such store object, because the normal closure property enforced by the DB's foreign key constraints is upheld.
 
-Store objects can still end up duplicated if the lower store gains a store object the upper store already had after.
+Store objects can still end up duplicated if the lower store later gains a store object the upper store already had.
 This is because when the `local-overlay` is remounted, it doesn't know how the lower store may have changed, and when the lower store is added to, any upper store directories / DBs are not in general visible either.
 We can have a "fsck" operation however that manually scans for missing / duplicated objects.
 
@@ -303,7 +306,7 @@ A store object in the lower store may or may not have a DB entry in the `overlay
 
 > In the store object state diagram diagram, this is represented by the fact that there are two green nodes, instead of just one like the one blue node.
 
-This introduces some flexibility in the system: the seem "logical" layered store can be represented in multiple different "physical" configurations.
+This introduces some flexibility in the system: the same "logical" layered store can be represented in multiple different "physical" configurations.
 This isn't a problem *per se*, but does mean there is a bit more complexity to consider during testing and system administration.
 
 ## Deleting isn't intuitive
