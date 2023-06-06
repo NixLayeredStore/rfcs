@@ -35,14 +35,15 @@ Each has serious drawbacks:
 
 - "Share everything" incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
 
-- Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's and could potentially lead to reading an incorrect SQLite Write-Ahead-Logging (WAL) file.
+- Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's.
+  (Furthermore, separate files from the DB proper like an out of date SQLite Write-Ahead-Logging (WAL) file *could* leak through, causing chaos.)
 
 The new `local-overlay` store also uses OverlayFS, but just for the store directory.
 The database is still a regular fresh empty one to start, and instead Nix explicitly knows about the lower store, so it can get any information for the DB it needs from it manually.
 This avoids all 3 downsides:
 
 - Store objects are never duplicated by the overlay store.
-  OverlayFS ensures that one copy in either layer is enough, and we are careful never to wastefully include a store object in both layers.
+  OverlayFS ensures that one copy in either layer is enough, and we are careful never to wastefully include a store object in the upper layer if it is already in the lower layer.
 
 - No excess synchronization.
   Local changes are just that: local, not shared with any other consumer.
@@ -331,10 +332,22 @@ There are a few problems with this:
    If any new store objects are added to the lower store, the overlayFS-combined local store will never know.
 
 2. The database can be very large.
-   For example, Replit's 16TB store has a 634 MB database.
+   For example, Replit's 16 TB store has a 634 MB database.
    OverlayFS doesn't now how to duplicate only part of a SQLite database, so we have to duplicate the whole thing per user/consumer.
    This will waste lots of space with information the consumer may not care about.
    And for a many-user product like Replit's, that will be wasting precious disk quota from the user's perspective too.
+
+## Use `nix-store --load-db` with the above
+
+As suggested [on discourse](https://discourse.nixos.org/t/super-colliding-nix-stores/28462/7), it is possible to augment the DB with additional paths after it has been created.
+Indeed, this is how the ISO installer for NixOS works.
+Running this periodically can allow the consumer to pick up any new paths added to the lower store since the last run.
+
+This does solve the first problem, but with poor performance penalty.
+We don't know what paths have change, so we have slurp up the entire DB.
+With Replit's 16 TB store's DB, this took 10 minutes.
+
+We could out of band try to track "revisions" so just new paths are added, but then we are adding a new source of complexity vs the "statelessness" of on-demand accessing the lower store (and relying on monotonicity).
 
 ## Bind mounts instead of overlayfs for `local-overlay` Store
 
