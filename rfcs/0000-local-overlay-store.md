@@ -18,8 +18,6 @@ This allows locally extending a shared store that is periodically updated with a
 # Motivation
 [motivation]: #motivation
 
-TODO: link Replit blog post.
-
 ## Technical motivation
 
 Many organizational users of Nix have a large collection of Nix store objects they wish to share with a number of consumers, be they human users, build farm workers etc.
@@ -33,9 +31,9 @@ The existing ways of doing this are:
 
 Each has serious drawbacks:
 
-- Share nothing wastes tones of space as many duplicate store objects are stored separately.
+- "Share nothing" wastes tons of space as many duplicate store objects are stored separately.
 
-- Share everything incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
+- "Share everything" incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
 
 - Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's.
 
@@ -44,11 +42,11 @@ The database is still a regular fresh empty one to start, and instead Nix explic
 This avoids all 3 downsides:
 
 - Store objects are never deduplicated.
-  OverlayFS ensures that one copy in either store dir layer is enough, and we are careful never to wastefully include a store object in both layers.
+  OverlayFS ensures that one copy in either layer is enough, and we are careful never to wastefully include a store object in both layers.
 
 - No excess synchronization.
-  local changes are just that: local, not shared with any other consumer.
-  The lower store is never written to (no modifications or even filesystem locks) so any slow NFS write and sync paths should not be encountered.
+  Local changes are just that: local, not shared with any other consumer.
+  The lower store is never written to (no modifications or even filesystem locks) so we should not encounter any slow write and sync paths in filesystem implementations like NFS.
 
 - No rigidity of the lower store.
   Since Nix sees both the `overlay-store`'s DB and the lower store, it is possible for it to be aware of and utilize objects that were added to the lower store after the upper store was created.
@@ -64,10 +62,17 @@ Rather than Nix being a controversial tool worth hiding, it can be a popular too
 Nix-unware usage can still work, but Nix-aware usage can do additional things.
 
 The `local-overlay` store can serve as a crucial tool to bridge these two modes of using Nix.
-The lower store can be however the artifacts were disseminated in the "hidden Nix" first phase of adoption, perhaps with a small tweak to expose the DB / daemon socket if it wasn't before.
+The lower store can be as before
+--- however the artifacts were disseminated in the "hidden Nix" first phase of adoption
+--- perhaps with only a small tweak to expose the DB / daemon socket if it wasn't before.
 The `local-overlay` store is new, but purely local, separate for each user that wants to use Nix, and completely not impacting any user that doesn't.
 
 By providing the `local-overlay` store, we are essentially completing a reusable step-by-step guide for Nix users to "Nixify their workplace" in a very conscientious and non-disruptive manner.
+
+## Motivation in action
+
+See [Replit's own announcement](https://blog.replit.com/super-colliding-nix-stores) of this feature (in its current non-upstreamed) form aimed at its users.
+This covers many of the same points above, but for the perspective of Replit users that would like to use Nix rather than the Nix community.
 
 # Detailed design
 [design]: #detailed-design
@@ -186,10 +191,10 @@ New snapshots can only be gotten when consumers log in again, and old snapshots 
 A slight drawback with the architecture is a lack of a normal form.
 A store object in the lower store may or may not have a DB entry in the `overlay-local` store.
 
-> In the store object state diagriam diagram, this is represented by the fact that there are two green nodes, instead of just one like the one blue node.
+> In the store object state diagram diagram, this is represented by the fact that there are two green nodes, instead of just one like the one blue node.
 
 This introduces some flexibility in the system: the seem "logical" layered store can be represented in multiple different "physical" configurations.
-This isn't a problem per-se, but does mean there is a bit more complexity to consider during testing and system administration.
+This isn't a problem *per se*, but does mean there is a bit more complexity to consider during testing and system administration.
 
 ## Deleting isn't intuitive
 
@@ -201,7 +206,24 @@ By deleting the upper DB entry, we are not removing the object from the `local-o
 # Alternatives
 [alternatives]: #alternatives
 
-## Bind mounts instead of overlayfs
+## Stock Nix with OverlayFS ("overlay everything" from motivation)
+
+It is possible to use OverlayFS on the entire Nix store with stock Nix.
+Just as added store objects would appear in the upper layer, so would the SQLite DB after any modification.
+
+There are a few problems with this:
+
+1. Once the lower store is "forked" in this way, there is no "merge".
+   The modified DB in the upper layer will completely cover up the lower store's DB.
+   If any new store objects are added to the lower store, the overlayFS-combined local store will never know.
+
+2. The database can be very large.
+   For example, Replit's 16TB store has a 634 MB database.
+   OverlayFS doesn't now how to duplicate only part of a SQLite database, so we have to duplicate the whole thing per user/consumer.
+   This will waste lots of space with information the consumer may not care about.
+   And for a many-user product like Replit's, that will be wasting precious disk quota from the user's perspective too.
+
+## Bind mounts instead of overlayfs for `local-overlay` Store
 
 Instead of mounting the entire lower store dir underneath ours via OverlayFS, we could bind mount individual store objects as we need them.
 The bind-mounting store would not longer be the union of the lower store with the additional store objects, instead the lower store acts more as a special optimized substituter.
@@ -211,7 +233,7 @@ There is no "have store object, don't yet have DB entry" middle state to worry a
 
 The downside of this is that Nix needs elevate permissions in order to create those bind mounts, and the impact of having arbitrarily many bind mounts is unknown.
 
-## FUSE
+## Store implmenetations using FUSE
 
 We could have a single FUSE mount that could manually implement the "bind on demand" semantics described above without cluttering the mount namespace with an entry per each shared store object.
 FUSE however is quite primitive, in that every read need to be shuffled via the FUSE server.
