@@ -373,8 +373,7 @@ But it represents as significantly greater departure from the status quo.
 # Unresolved questions
 [unresolved]: #unresolved-questions
 
-How to delete paths in the upper store without needing to remount the OverlayFS.
-(Expect to have answer by the time the RFC is up.)
+None at this time.
 
 # Future work
 [future]: #future-work
