@@ -182,7 +182,7 @@ The overlay store by contrast allows regular arbitrary options, almost.
 ```mermaid
 graph TD
     A -->|Add in store| B
-    B -->|Delete from store| A
+    B -.->|Delete from store| A
 
     A[Absent Store Object]
     B("Present store Object")
