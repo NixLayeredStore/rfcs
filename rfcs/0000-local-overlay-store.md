@@ -142,7 +142,7 @@ Key:
 As discussed in the motivation, store objects are never knowingly duplicated.
 The `local-overlay` store while in operation ensures that store objects are stored exactly once:
 either in the lower store or the upper layer directory.
-No file system data should ever be duplicated by `local-overlay itself.
+No file system data should ever be duplicated by `local-overlay` itself.
 
 Non-filesystem data, what goes in the DB (references, signatures, etc.) is duplicated.
 Any store object from the lower store that the `local-overlay` needs has that information copied into the `local-overlay` store's DB.
