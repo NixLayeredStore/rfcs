@@ -304,8 +304,7 @@ New snapshots can only be gotten when consumers log in again, and old snapshots 
 
 A slight drawback with the architecture is a lack of a normal form.
 A store object in the lower store may or may not have a DB entry in the `overlay-local` store.
-
-> In the store object state diagram this is represented by the fact that there are two green nodes, instead of just one like the blue node.
+This is the two "both" nodes in the last diagram.
 
 This introduces some flexibility in the system: the same "logical" layered store can be represented in multiple different "physical" configurations.
 This isn't a problem *per se*, but does mean there is a bit more complexity to consider during testing and system administration.
