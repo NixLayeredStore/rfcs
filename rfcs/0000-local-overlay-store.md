@@ -380,7 +380,7 @@ None at this time.
 
 We are considering a hybrid between the `local` store and `file://` store.
 This would *not* use NARs, but would use "NAR info" files instead of a SQLite database.
-This would side-step the currency issues of SQLite's read-only mode, and make "append only" usage of the store not require much synchronization.
+This would side-step the concurrency issues of SQLite's read-only mode, and make "append only" usage of the store not require much synchronization.
 (This is because the internal structure of the filesystem, unlike the internal structure of SQLite, is not visible to clients.)
 
 It is true that this is much slower used directly --- that is why Nix switched to using SQLite in the first place --- but in combination with a `local-overlay` store this doesn't matter.
