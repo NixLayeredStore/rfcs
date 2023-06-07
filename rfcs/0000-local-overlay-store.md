@@ -251,7 +251,7 @@ flowchart TD
     D1("Lower layer filesystem data<br>Lower store metadata<br>Overlay DB metadata")
 ```
 
-Whenever we the filesystem part of a store object reside in a layer, the metadata must also reside in that layer.
+Whenever the filesystem part of a store object reside in a layer, the metadata must also reside in that layer.
 I.e. an lower layer of store dir store object must have lower store metadata (exact mechanism is abstract and unspecified, could be SQlite DB or daemon), and an upper layer of store object must have an overlay DB entry.
 However, when we just have the store object in the lower layer, we may also have metadata in the upper layer.
 That means there are two cases when the metadata is in both layers: the duplicated case (both layers filesystem) and deduplicated case (just lower layer filesystem).
@@ -305,7 +305,7 @@ New snapshots can only be gotten when consumers log in again, and old snapshots 
 A slight drawback with the architecture is a lack of a normal form.
 A store object in the lower store may or may not have a DB entry in the `overlay-local` store.
 
-> In the store object state diagram diagram, this is represented by the fact that there are two green nodes, instead of just one like the one blue node.
+> In the store object state diagram this is represented by the fact that there are two green nodes, instead of just one like the blue node.
 
 This introduces some flexibility in the system: the same "logical" layered store can be represented in multiple different "physical" configurations.
 This isn't a problem *per se*, but does mean there is a bit more complexity to consider during testing and system administration.
@@ -359,7 +359,7 @@ There is no "have store object, don't yet have DB entry" middle state to worry a
 
 The downside of this is that Nix needs elevate permissions in order to create those bind mounts, and the impact of having arbitrarily many bind mounts is unknown.
 
-## Store implmenetations using FUSE
+## Store implementations using FUSE
 
 We could have a single FUSE mount that could manually implement the "bind on demand" semantics described above without cluttering the mount namespace with an entry per each shared store object.
 FUSE however is quite primitive, in that every read need to be shuffled via the FUSE server.
@@ -384,5 +384,5 @@ This would side-step the currency issues of SQLite's read-only mode, and make "a
 (This is because the internal structure of the filesystem, unlike the internal structure of SQLite, is not visible to clients.)
 
 It is true that this is much slower used directly --- that is why Nix switched to using SQLite in the first place --- but in combination with a `local-overlay` store this doesn't matter.
-Since non-filesystem data is copied into the `local-overlay` store's DB, it will effectively act as a cache, speeding up future entires.
+Since non-filesystem data is copied into the `local-overlay` store's DB, it will effectively act as a cache, speeding up future queries.
 Each NAR info file only needs to be read once.
