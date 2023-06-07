@@ -123,10 +123,12 @@ It has additional configuration items for:
  - `upper-layer`: The directory used as the upper layer of the OverlayFS
 
  - `check-mount`: Whether to check the filesystem mount configuration
-Here is an example of how the nix.conf configuration might look:
-\```
-store = local-overlay?lower-store=/mnt/lower/%3Fread-only%3Dtrue&upper-layer=/mnt/scratch/nix/upper/store
-\```
+
+   Here is an example of how the nix.conf configuration might look:
+   ```
+   store = local-overlay?lower-store=/mnt/lower/%3Fread-only%3Dtrue&upper-layer=/mnt/scratch/nix/upper/store
+   ```
+
 With `check-mount` enabled, on initialization it checks that an OverlayFS mount exists matching these parameters:
 
  - The lower layer must be the lower store's "real store directory"
@@ -377,6 +379,8 @@ None at this time.
 # Future work
 [future]: #future-work
 
+## Alternative to read-only local store
+
 We are considering a hybrid between the `local` store and `file://` store.
 This would *not* use NARs, but would use "NAR info" files instead of a SQLite database.
 This would side-step the concurrency issues of SQLite's read-only mode, and make "append only" usage of the store not require much synchronization.
@@ -385,3 +389,15 @@ This would side-step the concurrency issues of SQLite's read-only mode, and make
 It is true that this is much slower used directly --- that is why Nix switched to using SQLite in the first place --- but in combination with a `local-overlay` store this doesn't matter.
 Since non-filesystem data is copied into the `local-overlay` store's DB, it will effectively act as a cache, speeding up future queries.
 Each NAR info file only needs to be read once.
+
+## "Pivoting" betwen lower store
+
+Suppose a lower store wants to garbage collect some paths that overlay stores use.
+As written above, this is illegal.
+But if there was a "migration period" where the overlay stores could know what store objects were going to go away, they could copy them to the upper layer.
+
+A way to implement that by exposed both the old and new versions of the lower store.
+(This is simply enough to do with file systems that expose snapshots; it is out of scope for Nix itself).
+Nix would them look at both the old and new lower stores, compute the diff, and then copy things over.
+
+This goes well with the "fsck" operation, which also needs to check the entire upper layer for dangling references.
