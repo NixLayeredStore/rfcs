@@ -197,7 +197,7 @@ They cannot be logically deleted, but are always part of the overlay store.
 ### Both stores simplified view
 
 We can take the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product_of_graphs) of these two graphs,
-and additionally tweak it to cover the exeption from above:
+and additionally tweak it to cover the exception from above:
 
 ```mermaid
 flowchart TD
@@ -390,7 +390,7 @@ It is true that this is much slower used directly --- that is why Nix switched t
 Since non-filesystem data is copied into the `local-overlay` store's DB, it will effectively act as a cache, speeding up future queries.
 Each NAR info file only needs to be read once.
 
-## "Pivoting" betwen lower store
+## "Pivoting" between lower store
 
 Suppose a lower store wants to garbage collect some paths that overlay stores use.
 As written above, this is illegal.
