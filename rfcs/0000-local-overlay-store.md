@@ -232,7 +232,7 @@ flowchart TD
     A -->|Create in overlay store| C
 
     B -->|Create in upper store after created in lower store| D1
-    C -->|Create in lower store after created in lower store| D0
+    C -->|Create in lower store after created in upper store| D0
 
 
     D0 -->|Manual deduplication| D1
@@ -254,7 +254,7 @@ flowchart TD
 ```
 
 Whenever the filesystem part of a store object reside in a layer, the metadata must also reside in that layer.
-I.e. an lower layer of store dir store object must have lower store metadata (exact mechanism is abstract and unspecified, could be SQlite DB or daemon), and an upper layer of store object must have an overlay DB entry.
+I.e. a lower layer of store dir store object must have lower store metadata (exact mechanism is abstract and unspecified, could be SQlite DB or daemon), and an upper layer of store object must have an overlay DB entry.
 However, when we just have the store object in the lower layer, we may also have metadata in the upper layer.
 That means there are two cases when the metadata is in both layers: the duplicated case (both layers filesystem) and deduplicated case (just lower layer filesystem).
 
@@ -334,7 +334,7 @@ There are a few problems with this:
 
 2. The database can be very large.
    For example, Replit's 16 TB store has a 634 MB database.
-   OverlayFS doesn't now how to duplicate only part of a SQLite database, so we have to duplicate the whole thing per user/consumer.
+   OverlayFS doesn't know how to duplicate only part of a SQLite database, so we have to duplicate the whole thing per user/consumer.
    This will waste lots of space with information the consumer may not care about.
    And for a many-user product like Replit's, that will be wasting precious disk quota from the user's perspective too.
 
@@ -345,7 +345,7 @@ Indeed, this is how the ISO installer for NixOS works.
 Running this periodically can allow the consumer to pick up any new paths added to the lower store since the last run.
 
 This does solve the first problem, but with poor performance penalty.
-We don't know what paths have change, so we have slurp up the entire DB.
+We don't know what paths have changed, so we have slurp up the entire DB.
 With Replit's 16 TB store's DB, this took 10 minutes.
 
 We could out of band try to track "revisions" so just new paths are added, but then we are adding a new source of complexity vs the "statelessness" of on-demand accessing the lower store (and relying on monotonicity).
