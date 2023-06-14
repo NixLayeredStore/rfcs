@@ -34,6 +34,7 @@ Each has serious drawbacks:
 - "Share nothing" wastes tons of space as many duplicate store objects are stored separately.
 
 - "Share everything" incurs major overhead from synchronization, even if consumers are making store objects they don't intend any other consumer to use.
+  It also poses an inflexible security model where the actions of one consumer effect all of them.
 
 - Overlay everything cannot take advantage of new store objects added to the lower store, because its "fork" of the DB covers up the lower store's.
   (Furthermore, separate files from the DB proper like an out of date SQLite Write-Ahead-Logging (WAL) file *could* leak through, causing chaos.)
@@ -359,6 +360,7 @@ This gives a normal form in that objects are bind-mounted if and only if they ha
 There is no "have store object, don't yet have DB entry" middle state to worry about.
 
 The downside of this is that Nix needs elevate permissions in order to create those bind mounts, and the impact of having arbitrarily many bind mounts is unknown.
+Even if this design works fine once set up, the imposition of an O(n) initialization setting up each bind mount is prohibitive for many use-cases.
 
 ## Store implementations using FUSE
 
